@@ -19,8 +19,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include <string.h>
 #include "board_driver_usb.h"
-#include "sam_ba_usb.h"
-#include "sam_ba_cdc.h"
+#include "sam_ba_mass_stor.h"
 
 #define NVM_USB_PAD_TRANSN_POS            (45)
 #define NVM_USB_PAD_TRANSN_SIZE           (5)
@@ -38,18 +37,15 @@ static volatile bool read_job = false;
 /*----------------------------------------------------------------------------
 * \brief
 */
-P_USB_CDC_t USB_Open(P_USB_CDC_t pCdc, P_USB_t pUsb)
+void USB_Open(P_USB_MSD_t pMSD, P_USB_t pUsb)
 {
-    pCdc->pUsb = pUsb;
-    pCdc->currentConfiguration = 0;
-    pCdc->currentConnection    = 0;
-    pCdc->IsConfigured = USB_IsConfigured;
-    //  pCdc->Write        = USB_Write;
-    //  pCdc->Read         = USB_Read;
+    pMSD->pUsb = pUsb;
+    pMSD->currentConfiguration = 0;
+    pMSD->IsConfigured = USB_IsConfigured;
+    pMSD->Write        = USB_Write;
+    pMSD->Read         = USB_Read;
 
-    pCdc->pUsb->HOST.CTRLA.bit.ENABLE = true;
-
-    return pCdc;
+    pMSD->pUsb->HOST.CTRLA.bit.ENABLE = true;
 }
 
 /*----------------------------------------------------------------------------
@@ -248,9 +244,9 @@ uint32_t USB_Read_blocking(P_USB_t pUsb, char *pData, uint32_t length)
 /*----------------------------------------------------------------------------
 * \brief Test if the device is configured and handle enumeration
 */
-uint8_t USB_IsConfigured(P_USB_CDC_t pCdc)
+uint8_t USB_IsConfigured(P_USB_MSD_t pMSD)
 {
-    P_USB_t pUsb = pCdc->pUsb;
+    P_USB_t pUsb = pMSD->pUsb;
 
     /* Check for End of Reset flag */
     if (pUsb->DEVICE.INTFLAG.reg & USB_DEVICE_INTFLAG_EORST)
@@ -278,17 +274,17 @@ uint8_t USB_IsConfigured(P_USB_CDC_t pCdc)
         pUsb->DEVICE.DeviceEndpoint[0].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSCLR_BK0RDY;
 
         // Reset current configuration value to 0
-        pCdc->currentConfiguration = 0;
+        pMSD->currentConfiguration = 0;
     }
     else
     {
         if (pUsb->DEVICE.DeviceEndpoint[0].EPINTFLAG.reg & USB_DEVICE_EPINTFLAG_RXSTP)
         {
-            sam_ba_usb_CDC_Enumerate(pCdc);
+            sam_ba_usb_mass_stor_enumerate(pMSD);
         }
     }
 
-    return pCdc->currentConfiguration;
+    return pMSD->currentConfiguration;
 }
 
 /*----------------------------------------------------------------------------
@@ -310,9 +306,9 @@ void USB_SendStall(P_USB_t pUsb, bool direction_in)
 }
 
 /*----------------------------------------------------------------------------
-* \brief Send zero length packet through the control endpoint
+* \brief Send zero-length packet through the control endpoint
 */
-void USB_SendZlp(P_USB_t pUsb)
+void USB_SendZLP(P_USB_t pUsb)
 {
     /* Set the byte count as zero */
     usb_endpoint_table[0].DeviceDescBank[1].PCKSIZE.bit.BYTE_COUNT = 0;

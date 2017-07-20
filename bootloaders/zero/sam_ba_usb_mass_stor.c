@@ -56,82 +56,33 @@ char cfgDescriptor[] =
     0x80,   // CbmAttributes Bus powered without remote wakeup: 0x80, Self powered without remote wakeup: 0xc0
     0x32,   // CMaxPower, report using 100mA, enough for a bootloader
 
-    /* Communication Class Interface Descriptor Requirement */
+    /* Mass Storage Interface Descriptor */
     0x09, // bLength
     0x04, // bDescriptorType
     0x00, // bInterfaceNumber
     0x00, // bAlternateSetting
-    0x01, // bNumEndpoints
-    0x02, // bInterfaceClass
-    0x02, // bInterfaceSubclass
-    0x00, // bInterfaceProtocol
-    0x00, // iInterface
-
-    /* Header Functional Descriptor */
-    0x05, // bFunction Length
-    0x24, // bDescriptor type: CS_INTERFACE
-    0x00, // bDescriptor subtype: Header Func Desc
-    0x10, // bcdCDC:1.1
-    0x01,
-
-    /* ACM Functional Descriptor */
-    0x04, // bFunctionLength
-    0x24, // bDescriptor Type: CS_INTERFACE
-    0x02, // bDescriptor Subtype: ACM Func Desc
-    0x00, // bmCapabilities
-
-    /* Union Functional Descriptor */
-    0x05, // bFunctionLength
-    0x24, // bDescriptorType: CS_INTERFACE
-    0x06, // bDescriptor Subtype: Union Func Desc
-    0x00, // bMasterInterface: Communication Class Interface
-    0x01, // bSlaveInterface0: Data Class Interface
-
-    /* Call Management Functional Descriptor */
-    0x05, // bFunctionLength
-    0x24, // bDescriptor Type: CS_INTERFACE
-    0x01, // bDescriptor Subtype: Call Management Func Desc
-    0x00, // bmCapabilities: D1 + D0
-    0x01, // bDataInterface: Data Class Interface 1
-
-    /* Endpoint 1 descriptor */
-    0x07,   // bLength
-    0x05,   // bDescriptorType
-    0x83,   // bEndpointAddress, Endpoint 03 - IN
-    0x03,   // bmAttributes      INT
-    0x08,   // wMaxPacketSize
-    0x00,
-    0xFF,   // bInterval
-
-    /* Data Class Interface Descriptor Requirement */
-    0x09, // bLength
-    0x04, // bDescriptorType
-    0x01, // bInterfaceNumber
-    0x00, // bAlternateSetting
     0x02, // bNumEndpoints
-    0x0A, // bInterfaceClass
-    0x00, // bInterfaceSubclass
-    0x00, // bInterfaceProtocol
+    0x08, // bInterfaceClass = Mass-Storage
+    0x06, // bInterfaceSubclass = SCSI
+    0x50, // bInterfaceProtocol = Bulk-Only
     0x00, // iInterface
 
-    /* First alternate setting */
-    /* Endpoint 1 descriptor */
-    0x07,   // bLength
-    0x05,   // bDescriptorType
-    0x81,   // bEndpointAddress, Endpoint 01 - IN
-    0x02,   // bmAttributes      BULK
-    USB_EP_IN_SIZE,   // wMaxPacketSize
-    0x00,
-    0x00,   // bInterval
-
-    /* Endpoint 2 descriptor */
-    0x07,   // bLength
-    0x05,   // bDescriptorType
-    0x02,   // bEndpointAddress, Endpoint 02 - OUT
-    0x02,   // bmAttributes      BULK
-    USB_EP_OUT_SIZE,   // wMaxPacketSize
-    0x00,
-    0x00    // bInterval
+    /* Bulk In Endpoint */
+    7,     /* bLength */
+    DESCRIPTOR_ENDPOINT,      /* bDescriptorType */
+    0x02,                     /* bEndpointAddress */
+    0x02,                     /* bmAttributes  = USB_ENDPOINT_TYPE_BULK*/
+    0x40, 0x00,               /* wMaxPacketSize */
+    0,                        /* bInterval */
+    /* Bulk Out Endpoint */
+    7,     /* bLength */
+    DESCRIPTOR_ENDPOINT,      /* bDescriptorType */
+    0x82,                     /* bEndpointAddress */
+    0x02,                     /* bmAttributes  = USB_ENDPOINT_TYPE_BULK*/
+    0x40, 0x00,               /* wMaxPacketSize */
+    0,                        /* bInterval */
+    /* Terminator */
+    0                                  /* bLength */
 };
 
 #ifndef STRING_MANUFACTURER
@@ -142,14 +93,14 @@ char cfgDescriptor[] =
 #  define STRING_PRODUCT "SAMD21 mass-storage device"
 #endif
 
-USB_CDC_t sam_ba_cdc;
+USB_MSD_t sam_ba_msd;
 
 /*----------------------------------------------------------------------------
 * \brief This function is a callback invoked when a SETUP packet is received
 */
-void sam_ba_usb_CDC_Enumerate(P_USB_CDC_t pCdc)
+void sam_ba_usb_mass_stor_enumerate(P_USB_MSD_t pMSD)
 {
-    P_USB_t pUsb = pCdc->pUsb;
+    P_USB_t pUsb = pMSD->pUsb;
     static volatile uint8_t bmRequestType, bRequest, dir;
     static volatile uint16_t wValue, wIndex, wLength, wStatus;
 
@@ -157,14 +108,15 @@ void sam_ba_usb_CDC_Enumerate(P_USB_CDC_t pCdc)
     pUsb->DEVICE.DeviceEndpoint[0].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_RXSTP;
 
     /* Read the USB request parameters */
-    bmRequestType = udd_ep_out_cache_buffer[0][0];
-    bRequest      = udd_ep_out_cache_buffer[0][1];
-    wValue        = (udd_ep_out_cache_buffer[0][2] & 0xFF);
-    wValue       |= (udd_ep_out_cache_buffer[0][3] << 8);
-    wIndex        = (udd_ep_out_cache_buffer[0][4] & 0xFF);
-    wIndex       |= (udd_ep_out_cache_buffer[0][5] << 8);
-    wLength       = (udd_ep_out_cache_buffer[0][6] & 0xFF);
-    wLength      |= (udd_ep_out_cache_buffer[0][7] << 8);
+    uint8_t *SetupPacket = udd_ep_out_cache_buffer[0];
+    bmRequestType = SetupPacket[0];
+    bRequest      = SetupPacket[1];
+    uint8_t bDesc = SetupPacket[2];
+    wValue = (SetupPacket[3] << 8) | bDesc;
+    wIndex   = (SetupPacket[4] & 0xFF);
+    wIndex  |= (SetupPacket[5] << 8);
+    wLength  = (SetupPacket[6] & 0xFF);
+    wLength |= (SetupPacket[7] << 8);
 
     /* Clear the Bank 0 ready flag on Control OUT */
     pUsb->DEVICE.DeviceEndpoint[0].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSCLR_BK0RDY;
@@ -173,231 +125,205 @@ void sam_ba_usb_CDC_Enumerate(P_USB_CDC_t pCdc)
     switch ((bRequest << 8) | bmRequestType)
     {
         case USBREQ_GET_DESCRIPTOR:
-        if (wValue>>8 == GET_DESCRIPTOR_DEVICE)
-        {
-            /* Return Device Descriptor */
-            USB_Write(pCdc->pUsb, devDescriptor, minval(sizeof(devDescriptor), wLength), USB_EP_CTRL);
-        }
-        else if (wValue>>8 == GET_DESCRIPTOR_CONFIGURATION)
-        {
-            /* Return Configuration Descriptor */
-            USB_Write(pCdc->pUsb, cfgDescriptor, minval(sizeof(cfgDescriptor), wLength), USB_EP_CTRL);
-        }
-        else if (wValue>>8 == GET_DESCRIPTOR_STRING)
-        {
-            switch ( wValue & 0xff )
+            if ( bDesc == DESCRIPTOR_DEVICE)
             {
-                case STRING_INDEX_LANGUAGES: {
-                    uint16_t STRING_LANGUAGE[2] = { (GET_DESCRIPTOR_STRING<<8) | 4, 0x0409 };
+                /* Return Device Descriptor */
+                USB_Write(pUsb, devDescriptor, minval(sizeof(devDescriptor), wLength), USB_EP_CTRL);
+            }
+            else if ( bDesc == DESCRIPTOR_CONFIGURATION)
+            {
+                /* Return Configuration Descriptor */
+                USB_Write(pUsb, cfgDescriptor, minval(sizeof(cfgDescriptor), wLength), USB_EP_CTRL);
+            }
+            else if ( bDesc == DESCRIPTOR_STRING)
+            {
+                switch ( wValue & 0xff )
+                {
+                    case STRING_INDEX_LANGUAGES: 
+                        {
+                            uint16_t STRING_LANGUAGE[2] = { (DESCRIPTOR_STRING << 8) | 4, 0x0409 };
 
-                    USB_Write(pCdc->pUsb, (const char*)STRING_LANGUAGE, minval(sizeof(STRING_LANGUAGE), wLength), USB_EP_CTRL);
+                            USB_Write(pUsb, (const char*)STRING_LANGUAGE, minval(sizeof(STRING_LANGUAGE), wLength), USB_EP_CTRL);
+                        }
+                        break;
+
+                    case STRING_INDEX_MANUFACTURER:
+                        USB_SendString(pUsb, STRING_MANUFACTURER, wLength );
+                        break;
+
+                    case STRING_INDEX_PRODUCT:
+                        USB_SendString(pUsb, STRING_PRODUCT, wLength );
+                        break;
+                    default:
+                        /* Stall the request */
+                        USB_SendStall(pUsb, true);
+                        break;
                 }
-                break;
-
-                case STRING_INDEX_MANUFACTURER:
-                USB_SendString(pCdc->pUsb, STRING_MANUFACTURER, wLength );
-                break;
-
-                case STRING_INDEX_PRODUCT:
-                USB_SendString(pCdc->pUsb, STRING_PRODUCT, wLength );
-                break;
-                default:
+            }
+            else
+            {
                 /* Stall the request */
                 USB_SendStall(pUsb, true);
-                break;
             }
-        }
-        else
-        {
-            /* Stall the request */
-            USB_SendStall(pUsb, true);
-        }
-        break;
+            break;
 
         case USBREQ_SET_ADDRESS:
-        /* Send ZLP */
-        USB_SendZlp(pUsb);
-        /* Set device address to the newly received address from host */
-        USB_SetAddress(pCdc->pUsb, wValue);
-        break;
+            USB_SendZLP(pUsb);
+            /* Set device address to the newly received address from host */
+            USB_SetAddress(pUsb, wValue);
+            break;
 
         case USBREQ_SET_CONFIGURATION:
-        /* Store configuration */
-        pCdc->currentConfiguration = (uint8_t)wValue;
-
-        /* Send ZLP */
-        USB_SendZlp(pUsb);
-
-        /* Configure the 3 needed endpoints */
-        USB_Configure(pUsb);
-        break;
+            /* Store configuration */
+            pMSD->currentConfiguration = (uint8_t)wValue;
+            USB_SendZLP(pUsb);
+            /* Configure the 3 needed endpoints */
+            USB_Configure(pUsb);
+            break;
 
         case USBREQ_GET_CONFIGURATION:
-        /* Return current configuration value */
-        USB_Write(pCdc->pUsb, (char *) &(pCdc->currentConfiguration), sizeof(pCdc->currentConfiguration), USB_EP_CTRL);
-        break;
+            /* Return current configuration value */
+            USB_Write(pUsb, (char *) &(pMSD->currentConfiguration), sizeof(pMSD->currentConfiguration), USB_EP_CTRL);
+            break;
 
         case USBREQ_GET_STATUS_ZERO:
-        wStatus = 0;
-        USB_Write(pCdc->pUsb, (char *) &wStatus, sizeof(wStatus), USB_EP_CTRL);
-        break;
+            wStatus = 0;
+            USB_Write(pUsb, (char *) &wStatus, sizeof(wStatus), USB_EP_CTRL);
+            break;
 
         case USBREQ_GET_STATUS_INTERFACE:
-        wStatus = 0;
-        USB_Write(pCdc->pUsb, (char *) &wStatus, sizeof(wStatus), USB_EP_CTRL);
-        break;
+            wStatus = 0;
+            USB_Write(pUsb, (char *) &wStatus, sizeof(wStatus), USB_EP_CTRL);
+            break;
 
         case USBREQ_GET_STATUS_ENDPOINT:
-        wStatus = 0;
-        dir = wIndex & 80;
-        wIndex &= 0x0F;
-        if (wIndex <= 3)
-        {
-            if (dir)
+            wStatus = 0;
+            dir = wIndex & 80;
+            wIndex &= 0x0F;
+            if (wIndex <= 3)
             {
-                wStatus = (pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUS.reg & USB_DEVICE_EPSTATUSSET_STALLRQ1) ? 1 : 0;
+                if (dir)
+                {
+                    wStatus = (pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUS.reg & USB_DEVICE_EPSTATUSSET_STALLRQ1) ? 1 : 0;
+                }
+                else
+                {
+                    wStatus = (pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUS.reg & USB_DEVICE_EPSTATUSSET_STALLRQ0) ? 1 : 0;
+                }
+                /* Return current status of endpoint */
+                USB_Write(pUsb, (char *) &wStatus, sizeof(wStatus), USB_EP_CTRL);
             }
             else
             {
-                wStatus = (pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUS.reg & USB_DEVICE_EPSTATUSSET_STALLRQ0) ? 1 : 0;
+                /* Stall the request */
+                USB_SendStall(pUsb, true);
             }
-            /* Return current status of endpoint */
-            USB_Write(pCdc->pUsb, (char *) &wStatus, sizeof(wStatus), USB_EP_CTRL);
-        }
-        else
-        {
-            /* Stall the request */
-            USB_SendStall(pUsb, true);
-        }
-        break;
+            break;
 
         case USBREQ_SET_FEATURE_ZERO:
-        /* Stall the request */
-        USB_SendStall(pUsb, true);
-        break;
+            /* Stall the request */
+            USB_SendStall(pUsb, true);
+            break;
 
         case USBREQ_SET_FEATURE_INTERFACE:
-        /* Send ZLP */
-        USB_SendZlp(pUsb);
-        break;
+            USB_SendZLP(pUsb);
+            break;
 
         case USBREQ_SET_FEATURE_ENDPOINT:
-        dir = wIndex & 0x80;
-        wIndex &= 0x0F;
-        if ((wValue == 0) && wIndex && (wIndex <= 3))
-        {
-            /* Set STALL request for the endpoint */
-            if (dir)
+            dir = wIndex & 0x80;
+            wIndex &= 0x0F;
+            if ((wValue == 0) && wIndex && (wIndex <= 3))
             {
-                pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSSET.reg = USB_DEVICE_EPSTATUSSET_STALLRQ1;
+                /* Set STALL request for the endpoint */
+                if (dir)
+                {
+                    pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSSET.reg = USB_DEVICE_EPSTATUSSET_STALLRQ1;
+                }
+                else
+                {
+                    pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSSET.reg = USB_DEVICE_EPSTATUSSET_STALLRQ0;
+                }
+                USB_SendZLP(pUsb);
             }
             else
             {
-                pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSSET.reg = USB_DEVICE_EPSTATUSSET_STALLRQ0;
+                /* Stall the request */
+                USB_SendStall(pUsb, true);
             }
-
-            /* Send ZLP */
-            USB_SendZlp(pUsb);
-        }
-        else
-        {
-            /* Stall the request */
-            USB_SendStall(pUsb, true);
-        }
-        break;
+            break;
 
         case USBREQ_SET_INTERFACE:
         case USBREQ_CLEAR_FEATURE_ZERO:
-        /* Stall the request */
-        USB_SendStall(pUsb, true);
-        break;
+            /* Stall the request */
+            USB_SendStall(pUsb, true);
+            break;
 
         case USBREQ_CLEAR_FEATURE_INTERFACE:
-        /* Send ZLP */
-        USB_SendZlp(pUsb);
-        break;
+            USB_SendZLP(pUsb);
+            break;
 
         case USBREQ_CLEAR_FEATURE_ENDPOINT:
-        dir = wIndex & 0x80;
-        wIndex &= 0x0F;
+            dir = wIndex & 0x80;
+            wIndex &= 0x0F;
 
-        if ((wValue == 0) && wIndex && (wIndex <= 3))
-        {
-            if (dir)
+            if ((wValue == 0) && wIndex && (wIndex <= 3))
             {
-                if (pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUS.bit.STALLRQ1)
+                if (dir)
                 {
-                    // Remove stall request
-                    pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSCLR_STALLRQ1;
-                    if (pUsb->DEVICE.DeviceEndpoint[wIndex].EPINTFLAG.bit.STALL1)
+                    if (pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUS.bit.STALLRQ1)
                     {
-                        pUsb->DEVICE.DeviceEndpoint[wIndex].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_STALL1;
-                        // The Stall has occurred, then reset data toggle
-                        pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSSET_DTGLIN;
+                        // Remove stall request
+                        pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSCLR_STALLRQ1;
+                        if (pUsb->DEVICE.DeviceEndpoint[wIndex].EPINTFLAG.bit.STALL1)
+                        {
+                            pUsb->DEVICE.DeviceEndpoint[wIndex].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_STALL1;
+                            // The Stall has occurred, then reset data toggle
+                            pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSSET_DTGLIN;
+                        }
                     }
                 }
+                else
+                {
+                    if (pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUS.bit.STALLRQ0)
+                    {
+                        // Remove stall request
+                        pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSCLR_STALLRQ0;
+                        if (pUsb->DEVICE.DeviceEndpoint[wIndex].EPINTFLAG.bit.STALL0)
+                        {
+                            pUsb->DEVICE.DeviceEndpoint[wIndex].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_STALL0;
+                            // The Stall has occurred, then reset data toggle
+                            pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSSET_DTGLOUT;
+                        }
+                    }
+                }
+                USB_SendZLP(pUsb);
             }
             else
             {
-                if (pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUS.bit.STALLRQ0)
-                {
-                    // Remove stall request
-                    pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSCLR_STALLRQ0;
-                    if (pUsb->DEVICE.DeviceEndpoint[wIndex].EPINTFLAG.bit.STALL0)
-                    {
-                        pUsb->DEVICE.DeviceEndpoint[wIndex].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_STALL0;
-                        // The Stall has occurred, then reset data toggle
-                        pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSSET_DTGLOUT;
-                    }
-                }
+                USB_SendStall(pUsb, true);
             }
-            /* Send ZLP */
-            USB_SendZlp(pUsb);
-        }
-        else
-        {
-            USB_SendStall(pUsb, true);
-        }
-        break;
+            break;
 
-        // handle CDC class requests
-        case SET_LINE_CODING:
-        /* Send ZLP */
-        USB_SendZlp(pUsb);
-        break;
-
-        case GET_LINE_CODING:
-        /* Send current line coding */
-        USB_Write(pCdc->pUsb, (char *) &line_coding, minval(sizeof(usb_cdc_line_coding_t), wLength), USB_EP_CTRL);
-        break;
-
-        case SET_CONTROL_LINE_STATE:
-        /* Store the current connection */
-        pCdc->currentConnection = wValue;
-        /* Send ZLP */
-        USB_SendZlp(pUsb);
-        break;
+        // handle Mass-Storage class requests
+        // Any to add?
 
         default:
-        /* Stall the request */
-        USB_SendStall(pUsb, true);
-        break;
+            USB_SendStall(pUsb, true);
+            break;
     }
 }
 
 /*----------------------------------------------------------------------------
 * \brief
 */
-P_USB_CDC_t usb_init(void)
+P_USB_MSD_t usb_msd_init(void)
 {
-    sam_ba_cdc.pUsb = USB;
-
     /* Initialize USB */
     USB_Init();
-    /* Get the default CDC structure settings */
-    USB_Open(&sam_ba_cdc, sam_ba_cdc.pUsb);
+    /* Get the default MSD structure settings */
+    USB_Open(&sam_ba_msd, USB);
 
-    return &sam_ba_cdc;
+    return &sam_ba_msd;
 }
 
 /*----------------------------------------------------------------------------
@@ -408,16 +334,16 @@ P_USB_CDC_t usb_init(void)
 uint32_t USB_SendString(P_USB_t pUsb, const char* ascii_string, uint8_t maxLength)
 {
     uint8_t string_descriptor[255]; // Max USB-allowed string length
+
+    string_descriptor[0] = (strlen(ascii_string) + 1) * 2;
+    string_descriptor[1] = DESCRIPTOR_STRING;
+
     uint16_t* unicode_string=(uint16_t*)(string_descriptor + 2); // point on 3 bytes of descriptor
     int resulting_length;
-
-    string_descriptor[0] = (strlen(ascii_string)<<1) + 2;
-    string_descriptor[1] = GET_DESCRIPTOR_STRING;
-
-    for ( resulting_length = 1 ; *ascii_string && (resulting_length<maxLength>>1) ; resulting_length++ )
+    for ( resulting_length = 1 ; *ascii_string && (resulting_length < (maxLength/2)) ; resulting_length++ )
     {
         *unicode_string++ = (uint16_t)(*ascii_string++);
     }
 
-    return USB_Write(pUsb, (const char*)string_descriptor, resulting_length<<1, USB_EP_CTRL);
+    return USB_Write(pUsb, (const char*)string_descriptor, (resulting_length * 2), USB_EP_CTRL);
 }

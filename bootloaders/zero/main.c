@@ -25,9 +25,12 @@
 #include "board_driver_led.h"
 #include "sam_ba_usb.h"
 #include "sam_ba_cdc.h"
+#include "sam_ba_mass_stor.h"
 
 extern uint32_t __sketch_vectors_ptr; // Exported value from linker script
 extern void board_init(void);
+
+USB_CDC_t sam_ba_cdc;  // not really used, but expected by sam_ba_monitor.c
 
 #if (defined DEBUG) && (DEBUG == 1)
 volatile uint32_t* pulSketch_Start_Address;
@@ -174,7 +177,9 @@ int main(void)
 #endif
 
 #if SAM_BA_INTERFACE == SAM_BA_USBCDC_ONLY  ||  SAM_BA_INTERFACE == SAM_BA_BOTH_INTERFACES
-  pCdc = usb_init();
+  pCdc = usb_init();  // start the serial-port device
+#else
+  P_USB_MSD_t pMSD = usb_msd_init();  // start the mass-storage device
 #endif
 
   DEBUG_PIN_LOW;

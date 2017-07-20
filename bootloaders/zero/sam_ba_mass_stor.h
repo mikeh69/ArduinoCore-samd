@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "sam_ba_usb.h"  // for P_USB_t definition
 
 /* MSC Subclass Codes */
 #define MSC_SUBCLASS_RBC               0x01
@@ -82,5 +83,19 @@ typedef struct {
 #define UFI_CMD_MODE_SENSE10           0x5A
 #define UFI_CMD_READ12                 0xA8
 #define UFI_CMD_WRITE12                0xAA
+
+typedef struct _USB_MSD
+{
+    // Private members
+    P_USB_t pUsb;
+    uint8_t currentConfiguration;
+    // Public Methods:
+    uint8_t (*IsConfigured)(struct _USB_MSD *pMSD);
+    uint32_t (*Write) (P_USB_t pUsb, const char *pData, uint32_t length, uint8_t ep_num);
+    uint32_t (*Read)  (P_USB_t pUsb, char *pData, uint32_t length);
+} USB_MSD_t, *P_USB_MSD_t;
+
+P_USB_MSD_t usb_msd_init(void);
+void sam_ba_usb_mass_stor_enumerate(P_USB_MSD_t pMSD);
 
 #endif // _SAM_BA_MASS_STOR_H_
