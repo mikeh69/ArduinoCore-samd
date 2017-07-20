@@ -280,7 +280,7 @@ uint8_t USB_IsConfigured(P_USB_MSD_t pMSD)
     {
         if (pUsb->DEVICE.DeviceEndpoint[0].EPINTFLAG.reg & USB_DEVICE_EPINTFLAG_RXSTP)
         {
-            sam_ba_usb_mass_stor_enumerate(pMSD);
+            sam_ba_usb_mass_stor_handle_req(pMSD);
         }
     }
 

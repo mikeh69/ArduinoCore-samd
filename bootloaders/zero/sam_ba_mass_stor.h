@@ -84,6 +84,11 @@ typedef struct {
 #define UFI_CMD_READ12                 0xA8
 #define UFI_CMD_WRITE12                0xAA
 
+/* MSD Class Specific Request Codes - see USBMASSBULK_10.pdf */
+#define MASS_STORAGE_RESET            0x21FF  // section 3.1
+#define GET_MAX_LUN                   0xA1FE  // section 3.2
+
+
 typedef struct _USB_MSD
 {
     // Private members
@@ -96,6 +101,6 @@ typedef struct _USB_MSD
 } USB_MSD_t, *P_USB_MSD_t;
 
 P_USB_MSD_t usb_msd_init(void);
-void sam_ba_usb_mass_stor_enumerate(P_USB_MSD_t pMSD);
+void sam_ba_usb_mass_stor_handle_req(P_USB_MSD_t pMSD);
 
 #endif // _SAM_BA_MASS_STOR_H_

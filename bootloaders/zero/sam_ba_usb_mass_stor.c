@@ -34,7 +34,7 @@ const char devDescriptor[] =
     0x02,   // bcdDevice H
     STRING_INDEX_MANUFACTURER,   // iManufacturer
     STRING_INDEX_PRODUCT,        // iProduct
-    0x00,   // SerialNumber, should be based on product unique ID
+    STRING_INDEX_SERIAL_NUMBER,  // SerialNumber, should be based on product unique ID
     0x01    // bNumConfigs
 };
 
@@ -98,7 +98,7 @@ USB_MSD_t sam_ba_msd;
 /*----------------------------------------------------------------------------
 * \brief This function is a callback invoked when a SETUP packet is received
 */
-void sam_ba_usb_mass_stor_enumerate(P_USB_MSD_t pMSD)
+void sam_ba_usb_mass_stor_handle_req(P_USB_MSD_t pMSD)
 {
     P_USB_t pUsb = pMSD->pUsb;
     static volatile uint8_t bmRequestType, bRequest, dir;
@@ -154,15 +154,18 @@ void sam_ba_usb_mass_stor_enumerate(P_USB_MSD_t pMSD)
                     case STRING_INDEX_PRODUCT:
                         USB_SendString(pUsb, STRING_PRODUCT, wLength );
                         break;
+
+                    case STRING_INDEX_SERIAL_NUMBER:
+                    USB_SendString(pUsb, "1234567890", wLength );  // TODO: create serial-number string from device unique-ID
+                    break;
+
                     default:
-                        /* Stall the request */
                         USB_SendStall(pUsb, true);
                         break;
                 }
             }
             else
             {
-                /* Stall the request */
                 USB_SendStall(pUsb, true);
             }
             break;
@@ -215,13 +218,11 @@ void sam_ba_usb_mass_stor_enumerate(P_USB_MSD_t pMSD)
             }
             else
             {
-                /* Stall the request */
                 USB_SendStall(pUsb, true);
             }
             break;
 
         case USBREQ_SET_FEATURE_ZERO:
-            /* Stall the request */
             USB_SendStall(pUsb, true);
             break;
 
@@ -247,14 +248,12 @@ void sam_ba_usb_mass_stor_enumerate(P_USB_MSD_t pMSD)
             }
             else
             {
-                /* Stall the request */
                 USB_SendStall(pUsb, true);
             }
             break;
 
         case USBREQ_SET_INTERFACE:
         case USBREQ_CLEAR_FEATURE_ZERO:
-            /* Stall the request */
             USB_SendStall(pUsb, true);
             break;
 
@@ -305,8 +304,18 @@ void sam_ba_usb_mass_stor_enumerate(P_USB_MSD_t pMSD)
             break;
 
         // handle Mass-Storage class requests
-        // Any to add?
-
+        case MASS_STORAGE_RESET:
+            // anything to be done?
+            USB_SendZLP(pUsb);
+            break;
+            
+        case GET_MAX_LUN:
+            {
+                uint8_t max_lun = 1;
+                USB_Write(pUsb, (char *) &max_lun, 1, USB_EP_CTRL);
+            }            
+            break;
+            
         default:
             USB_SendStall(pUsb, true);
             break;
