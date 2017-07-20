@@ -30,7 +30,7 @@ usb_cdc_line_coding_t line_coding=
 
 #define pCdc (&sam_ba_cdc)
 
-int cdc_putc(/*P_USB_CDC pCdc,*/ int value)
+int cdc_putc(/*P_USB_CDC_t pCdc,*/ int value)
 {
   /* Send single byte on USB CDC */
   USB_Write(pCdc->pUsb, (const char *)&value, 1, USB_EP_IN);
@@ -38,7 +38,7 @@ int cdc_putc(/*P_USB_CDC pCdc,*/ int value)
   return 1;
 }
 
-int cdc_getc(/*P_USB_CDC pCdc*/void)
+int cdc_getc(/*P_USB_CDC_t pCdc*/void)
 {
   uint8_t rx_char;
 
@@ -48,7 +48,7 @@ int cdc_getc(/*P_USB_CDC pCdc*/void)
   return (int)rx_char;
 }
 
-bool cdc_is_rx_ready(/*P_USB_CDC pCdc*/void)
+bool cdc_is_rx_ready(/*P_USB_CDC_t pCdc*/void)
 {
   /* Check whether the device is configured */
   if ( !USB_IsConfigured(pCdc) )
@@ -58,14 +58,14 @@ bool cdc_is_rx_ready(/*P_USB_CDC pCdc*/void)
   return (pCdc->pUsb->DEVICE.DeviceEndpoint[USB_EP_OUT].EPINTFLAG.bit.TRCPT0);
 }
 
-uint32_t cdc_write_buf(/*P_USB_CDC pCdc,*/ void const* data, uint32_t length)
+uint32_t cdc_write_buf(/*P_USB_CDC_t pCdc,*/ void const* data, uint32_t length)
 {
   /* Send the specified number of bytes on USB CDC */
   USB_Write(pCdc->pUsb, (const char *)data, length, USB_EP_IN);
   return length;
 }
 
-uint32_t cdc_read_buf(/*P_USB_CDC pCdc,*/ void* data, uint32_t length)
+uint32_t cdc_read_buf(/*P_USB_CDC_t pCdc,*/ void* data, uint32_t length)
 {
   /* Check whether the device is configured */
   if ( !USB_IsConfigured(pCdc) )
@@ -75,7 +75,7 @@ uint32_t cdc_read_buf(/*P_USB_CDC pCdc,*/ void* data, uint32_t length)
   return USB_Read(pCdc->pUsb, (char *)data, length);
 }
 
-uint32_t cdc_read_buf_xmd(/*P_USB_CDC pCdc,*/ void* data, uint32_t length)
+uint32_t cdc_read_buf_xmd(/*P_USB_CDC_t pCdc,*/ void* data, uint32_t length)
 {
   /* Check whether the device is configured */
   if ( !USB_IsConfigured(pCdc) )

@@ -1,20 +1,7 @@
 /*
-Copyright (c) 2015 Arduino LLC.  All right reserved.
-Copyright (c) 2015 Atmel Corporation/Thibaut VIARD.  All right reserved.
+Copyright (c) 2017 ASH Wireless Ltd.
 
-This library is free software; you can redistribute it and/or
-modify it under the terms of the GNU Lesser General Public
-License as published by the Free Software Foundation; either
-version 2.1 of the License, or (at your option) any later version.
-
-This library is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-See the GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public
-License along with this library; if not, write to the Free Software
-Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+Implements the Mass-Storage Class (USB flash-drive) functionality
 */
 
 #include <stdint.h>
@@ -22,7 +9,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "board_definitions.h"
 #include "sam_ba_usb.h"
 #include "board_driver_usb.h"
-#include "sam_ba_cdc.h"
+#include "sam_ba_mass_stor.h"
 
 /* This data array will be copied into SRAM as its length is inferior to 64 bytes,
 * and so can stay in flash.
@@ -35,9 +22,9 @@ const char devDescriptor[] =
     0x01,   // bDescriptorType
     0x00,   // bcdUSB L
     0x02,   // bcdUSB H
-    0x02,   // bDeviceClass:    CDC class code
-    0x00,   // bDeviceSubclass: CDC class sub code
-    0x00,   // bDeviceProtocol: CDC Device protocol
+    0x00,   // bDeviceClass:    mass-storage class code
+    0x00,   // bDeviceSubclass
+    0x00,   // bDeviceProtocol
     0x40,   // bMaxPacketSize0
     USB_VID_LOW,   // idVendor L
     USB_VID_HIGH,   // idVendor H
@@ -148,11 +135,11 @@ char cfgDescriptor[] =
 };
 
 #ifndef STRING_MANUFACTURER
-#  define STRING_MANUFACTURER "Arduino LLC"
+#  define STRING_MANUFACTURER "ASH Wireless Ltd."
 #endif
 
 #ifndef STRING_PRODUCT
-#  define STRING_PRODUCT "Arduino Zero"
+#  define STRING_PRODUCT "SAMD21 mass-storage device"
 #endif
 
 USB_CDC_t sam_ba_cdc;

@@ -21,7 +21,7 @@
 #define _SAM_BA_USB_CDC_H_
 
 #include <stdint.h>
-#include "sam_ba_usb.h"
+#include "cdc_enumerate.h"
 
 typedef struct
 {
@@ -45,21 +45,21 @@ extern usb_cdc_line_coding_t line_coding;
  * \param Data to send
  * \return number of data sent
  */
-int cdc_putc(/*P_USB_CDC pCdc,*/ int value);
+int cdc_putc(/*P_USB_CDC_t pCdc,*/ int value);
 
 /**
  * \brief Reads a single byte through USB CDC
  *
  * \return Data read through USB
  */
-int cdc_getc(/*P_USB_CDC pCdc*/);
+int cdc_getc(/*P_USB_CDC_t pCdc*/);
 
 /**
  * \brief Checks if a character has been received on USB CDC
  *
  * \return \c 1 if a byte is ready to be read.
  */
-bool cdc_is_rx_ready(/*P_USB_CDC pCdc*/);
+bool cdc_is_rx_ready(/*P_USB_CDC_t pCdc*/);
 
 /**
  * \brief Sends buffer on USB CDC
@@ -68,7 +68,7 @@ bool cdc_is_rx_ready(/*P_USB_CDC pCdc*/);
  * \param number of data to send
  * \return number of data sent
  */
-uint32_t cdc_write_buf(/*P_USB_CDC pCdc,*/ void const* data, uint32_t length);
+uint32_t cdc_write_buf(/*P_USB_CDC_t pCdc,*/ void const* data, uint32_t length);
 
 /**
  * \brief Gets data on USB CDC
@@ -77,7 +77,7 @@ uint32_t cdc_write_buf(/*P_USB_CDC pCdc,*/ void const* data, uint32_t length);
  * \param number of data to read
  * \return number of data read
  */
-uint32_t cdc_read_buf(/*P_USB_CDC pCdc,*/ void* data, uint32_t length);
+uint32_t cdc_read_buf(/*P_USB_CDC_t pCdc,*/ void* data, uint32_t length);
 
 /**
  * \brief Gets specified number of bytes on USB CDC
@@ -86,6 +86,6 @@ uint32_t cdc_read_buf(/*P_USB_CDC pCdc,*/ void* data, uint32_t length);
  * \param number of data to read
  * \return number of data read
  */
-uint32_t cdc_read_buf_xmd(/*P_USB_CDC pCdc,*/ void* data, uint32_t length);
+uint32_t cdc_read_buf_xmd(/*P_USB_CDC_t pCdc,*/ void* data, uint32_t length);
 
 #endif // _SAM_BA_USB_CDC_H_

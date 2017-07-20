@@ -156,7 +156,7 @@ uint32_t* pulSketch_Start_Address;
 int main(void)
 {
 #if SAM_BA_INTERFACE == SAM_BA_USBCDC_ONLY  ||  SAM_BA_INTERFACE == SAM_BA_BOTH_INTERFACES
-  P_USB_CDC pCdc;
+  P_USB_CDC_t pCdc;
 #endif
   DEBUG_PIN_HIGH;
 

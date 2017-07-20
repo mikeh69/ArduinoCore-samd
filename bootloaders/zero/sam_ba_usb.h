@@ -15,10 +15,15 @@
   You should have received a copy of the GNU Lesser General Public
   License along with this library; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+  
+
+  Amended to include generic USB definitions ONLY - definitions specfic to 
+  a CDC (Communications Data Class, i.e. serial modem) device have been moved
+  to another header file.
 */
 
-#ifndef CDC_ENUMERATE_H
-#define CDC_ENUMERATE_H
+#ifndef _SAM_BA_USB_H_
+#define _SAM_BA_USB_H_
 
 #include <sam.h>
 #include <stdbool.h>
@@ -32,35 +37,35 @@
 #define MAX_EP                  (4u)
 
 /* USB standard request code */
-#define STD_GET_STATUS_ZERO            (0x0080u)
-#define STD_GET_STATUS_INTERFACE       (0x0081u)
-#define STD_GET_STATUS_ENDPOINT        (0x0082u)
+#define USBREQ_GET_STATUS_ZERO            (0x0080u)
+#define USBREQ_GET_STATUS_INTERFACE       (0x0081u)
+#define USBREQ_GET_STATUS_ENDPOINT        (0x0082u)
 
-#define STD_CLEAR_FEATURE_ZERO         (0x0100u)
-#define STD_CLEAR_FEATURE_INTERFACE    (0x0101u)
-#define STD_CLEAR_FEATURE_ENDPOINT     (0x0102u)
+#define USBREQ_CLEAR_FEATURE_ZERO         (0x0100u)
+#define USBREQ_CLEAR_FEATURE_INTERFACE    (0x0101u)
+#define USBREQ_CLEAR_FEATURE_ENDPOINT     (0x0102u)
 
-#define STD_SET_FEATURE_ZERO           (0x0300u)
-#define STD_SET_FEATURE_INTERFACE      (0x0301u)
-#define STD_SET_FEATURE_ENDPOINT       (0x0302u)
+#define USBREQ_SET_FEATURE_ZERO           (0x0300u)
+#define USBREQ_SET_FEATURE_INTERFACE      (0x0301u)
+#define USBREQ_SET_FEATURE_ENDPOINT       (0x0302u)
 
-#define STD_SET_ADDRESS                (0x0500u)
-#define STD_GET_DESCRIPTOR             (0x0680u)
-#define STD_SET_DESCRIPTOR             (0x0700u)
-#define STD_GET_CONFIGURATION          (0x0880u)
-#define STD_SET_CONFIGURATION          (0x0900u)
-#define STD_GET_INTERFACE              (0x0A81u)
-#define STD_SET_INTERFACE              (0x0B01u)
-#define STD_SYNCH_FRAME                (0x0C82u)
+#define USBREQ_SET_ADDRESS                (0x0500u)
+#define USBREQ_GET_DESCRIPTOR             (0x0680u)
+#define USBREQ_SET_DESCRIPTOR             (0x0700u)
+#define USBREQ_GET_CONFIGURATION          (0x0880u)
+#define USBREQ_SET_CONFIGURATION          (0x0900u)
+#define USBREQ_GET_INTERFACE              (0x0A81u)
+#define USBREQ_SET_INTERFACE              (0x0B01u)
+#define USBREQ_SYNCH_FRAME                (0x0C82u)
 
-#define STD_GET_DESCRIPTOR_DEVICE                          (1u)
-#define STD_GET_DESCRIPTOR_CONFIGURATION                   (2u)
-#define STD_GET_DESCRIPTOR_STRING                          (3u)
-#define STD_GET_DESCRIPTOR_INTERFACE                       (4u)
-#define STD_GET_DESCRIPTOR_ENDPOINT                        (5u)
-#define STD_GET_DESCRIPTOR_DEVICE_QUALIFIER                (6u)
-#define STD_GET_DESCRIPTOR_OTHER_SPEED_CONFIGURATION       (7u)
-#define STD_GET_DESCRIPTOR_INTERFACE_POWER1                (8u)
+#define GET_DESCRIPTOR_DEVICE                          (1u)
+#define GET_DESCRIPTOR_CONFIGURATION                   (2u)
+#define GET_DESCRIPTOR_STRING                          (3u)
+#define GET_DESCRIPTOR_INTERFACE                       (4u)
+#define GET_DESCRIPTOR_ENDPOINT                        (5u)
+#define GET_DESCRIPTOR_DEVICE_QUALIFIER                (6u)
+#define GET_DESCRIPTOR_OTHER_SPEED_CONFIGURATION       (7u)
+#define GET_DESCRIPTOR_INTERFACE_POWER1                (8u)
 
 #define FEATURE_ENDPOINT_HALT          (0u)
 #define FEATURE_DEVICE_REMOTE_WAKEUP   (1u)
@@ -70,34 +75,11 @@
 #define STRING_INDEX_MANUFACTURER      (0x01u)
 #define STRING_INDEX_PRODUCT           (0x02u)
 
-#define SAM_BA_MIN(a, b) (((a) < (b)) ? (a) : (b))
+#define minval(a, b) (((a) < (b)) ? (a) : (b))
+
+typedef Usb USB_t, *P_USB_t;  // (define consistent names for the Atmel CMSIS type) 
+
+uint32_t USB_SendString(P_USB_t pUsb, const char* ascii_string, uint8_t maxLength);
 
 
-typedef struct _USB_CDC
-{
-	// Private members
-	Usb *pUsb;
-	uint8_t currentConfiguration;
-	uint8_t currentConnection;
-	// Public Methods:
-	uint8_t (*IsConfigured)(struct _USB_CDC *pCdc);
-//	uint32_t (*Write) (Usb *pUsb, const char *pData, uint32_t length, uint8_t ep_num);
-//	uint32_t (*Read)  (Usb *pUsb, char *pData, uint32_t length);
-} USB_CDC, *P_USB_CDC;
-
-/**
- * \brief Initializes the USB module
- *
- * \return Pointer to the USB CDC structure
- */
-P_USB_CDC usb_init(void);
-
-void sam_ba_usb_CDC_Enumerate(P_USB_CDC pCdc);
-
-uint32_t USB_SendString(Usb *pUsb, const char* ascii_string, uint8_t maxLength);
-
-extern USB_CDC sam_ba_cdc;
-
-
-
-#endif // CDC_ENUMERATE_H
+#endif // _SAM_BA_USB_H_
