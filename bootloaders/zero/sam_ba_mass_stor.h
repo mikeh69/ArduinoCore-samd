@@ -95,12 +95,12 @@ typedef struct _USB_MSD
     P_USB_t pUsb;
     uint8_t currentConfiguration;
     // Public Methods:
-    uint8_t (*IsConfigured)(struct _USB_MSD *pMSD);
+    uint8_t (*IsConfigured)(P_USB_t pUsb);
     uint32_t (*Write) (P_USB_t pUsb, const char *pData, uint32_t length, uint8_t ep_num);
     uint32_t (*Read)  (P_USB_t pUsb, char *pData, uint32_t length);
 } USB_MSD_t, *P_USB_MSD_t;
 
 P_USB_MSD_t usb_msd_init(void);
-void sam_ba_usb_mass_stor_handle_req(P_USB_MSD_t pMSD);
+bool sam_ba_usb_mass_stor_handle_req(P_USB_t pUsb, uint8_t *pCurrentConfig);
 
 #endif // _SAM_BA_MASS_STOR_H_

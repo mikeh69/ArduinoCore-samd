@@ -15,11 +15,13 @@ See the GNU Lesser General Public License for more details.
 You should have received a copy of the GNU Lesser General Public
 License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+This module is essentially a Hardware Abstraction Layer - it encapsulates 
+the SAMD21-specific code and presents a "generic USB" API.
 */
 
 #include <string.h>
 #include "board_driver_usb.h"
-#include "sam_ba_mass_stor.h"
 
 #define NVM_USB_PAD_TRANSN_POS            (45)
 #define NVM_USB_PAD_TRANSN_SIZE           (5)
@@ -28,24 +30,25 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define NVM_USB_PAD_TRIM_POS              (55)
 #define NVM_USB_PAD_TRIM_SIZE             (3)
 
+extern const char *DeviceDescriptor;
+extern const char *ConfigDescriptor[];
+extern const char* ManufacturerString;
+extern const char* ProductString;
+extern const char* SerialNumberString;
+
 __attribute__((__aligned__(4))) UsbDeviceDescriptor usb_endpoint_table[MAX_EP]; // Initialized to zero in USB_Init
 __attribute__((__aligned__(4))) uint8_t udd_ep_out_cache_buffer[2][64]; //1 for CTRL, 1 for BULK
 __attribute__((__aligned__(4))) uint8_t udd_ep_in_cache_buffer[2][64]; //1 for CTRL, 1 for BULK
 
 static volatile bool read_job = false;
+static uint8_t bCurrentConfig = 0;
 
 /*----------------------------------------------------------------------------
-* \brief
+* \brief Enable the USB interface at hardware level
 */
-void USB_Open(P_USB_MSD_t pMSD, P_USB_t pUsb)
+void USB_Open(P_USB_t pUsb)
 {
-    pMSD->pUsb = pUsb;
-    pMSD->currentConfiguration = 0;
-    pMSD->IsConfigured = USB_IsConfigured;
-    pMSD->Write        = USB_Write;
-    pMSD->Read         = USB_Read;
-
-    pMSD->pUsb->HOST.CTRLA.bit.ENABLE = true;
+    pUsb->HOST.CTRLA.bit.ENABLE = true;
 }
 
 /*----------------------------------------------------------------------------
@@ -242,11 +245,11 @@ uint32_t USB_Read_blocking(P_USB_t pUsb, char *pData, uint32_t length)
 }
 
 /*----------------------------------------------------------------------------
-* \brief Test if the device is configured and handle enumeration
+* \brief Test if the device is configured and handle requests
 */
-uint8_t USB_IsConfigured(P_USB_MSD_t pMSD)
+uint8_t USB_IsConfigured(P_USB_t pUsb)
 {
-    P_USB_t pUsb = pMSD->pUsb;
+    uint8_t currentConfiguration = 0;
 
     /* Check for End of Reset flag */
     if (pUsb->DEVICE.INTFLAG.reg & USB_DEVICE_INTFLAG_EORST)
@@ -274,17 +277,258 @@ uint8_t USB_IsConfigured(P_USB_MSD_t pMSD)
         pUsb->DEVICE.DeviceEndpoint[0].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSCLR_BK0RDY;
 
         // Reset current configuration value to 0
-        pMSD->currentConfiguration = 0;
+        currentConfiguration = 0;
     }
     else
     {
         if (pUsb->DEVICE.DeviceEndpoint[0].EPINTFLAG.reg & USB_DEVICE_EPINTFLAG_RXSTP)
         {
-            sam_ba_usb_mass_stor_handle_req(pMSD);
+            USB_HandleRequest(pUsb, 0, 0);  // TODO - pass pointers for class-specific request handling
         }
     }
 
-    return pMSD->currentConfiguration;
+    return currentConfiguration;
+}
+
+/*----------------------------------------------------------------------------
+* \brief Check whether a USB Request has been received from the Host
+*/
+bool USB_IsRequestPending(P_USB_t pUsb)
+{
+    if (pUsb->DEVICE.DeviceEndpoint[0].EPINTFLAG.reg & USB_DEVICE_EPINTFLAG_RXSTP)
+    {
+        return true;
+    }
+    return false;
+}
+
+/*----------------------------------------------------------------------------
+* \brief Deal with the Request, and return whether it was handled successfully or NACKed
+*/
+bool USB_HandleRequest(P_USB_t pUsb, ClassReqHandlerFn_t pClassReqHandler, void *pExtraParams)
+{
+    static volatile uint8_t bmRequestType, bRequest, dir;
+    static volatile uint16_t wValue, wIndex, wLength, wStatus;
+    bool retval = true;
+
+    /* Clear the Received Setup flag */
+    pUsb->DEVICE.DeviceEndpoint[0].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_RXSTP;
+
+    /* Read the USB request parameters */
+    uint8_t *SetupPacket = udd_ep_out_cache_buffer[0];
+    bmRequestType = SetupPacket[0];
+    if ((bmRequestType & 0x60) != 0)  // if this is a class-specific or vendor-specific request,
+    {
+        return pClassReqHandler(pUsb, SetupPacket, pExtraParams);  // call the class-specific request handler function
+    }
+    
+    bRequest      = SetupPacket[1];
+    uint8_t bDesc = SetupPacket[2];
+    wValue = (SetupPacket[3] << 8) | bDesc;
+    wIndex   = (SetupPacket[4] & 0xFF);
+    wIndex  |= (SetupPacket[5] << 8);
+    wLength  = (SetupPacket[6] & 0xFF);
+    wLength |= (SetupPacket[7] << 8);
+
+    /* Clear the Bank 0 ready flag on Control OUT */
+    pUsb->DEVICE.DeviceEndpoint[0].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSCLR_BK0RDY;
+
+    /* Handle supported standard device request Cf Table 9-3 in USB specification Rev 1.1 */
+    switch ((bRequest << 8) | bmRequestType)
+    {
+        case USBREQ_GET_DESCRIPTOR:
+            if ( bDesc == DESCRIPTOR_DEVICE)
+            {
+                /* Return Device Descriptor */
+                uint8_t desc_length = DeviceDescriptor[0];  // first byte of descriptor gives its length
+                USB_Write(pUsb, (const char*)DeviceDescriptor, minval(desc_length, wLength), USB_EP_CTRL);
+            }
+            else if ( bDesc == DESCRIPTOR_CONFIGURATION)
+            {
+                /* Return Configuration Descriptor */
+                uint8_t desc_length = ConfigDescriptor[bCurrentConfig][0];  // first byte of descriptor gives its length
+                USB_Write(pUsb, (const char*)ConfigDescriptor[bCurrentConfig], minval(desc_length, wLength), USB_EP_CTRL);
+            }
+            else if ( bDesc == DESCRIPTOR_STRING)
+            {
+                switch ( wValue & 0xff )
+                {
+                    case STRING_INDEX_LANGUAGES:
+                    {
+                        uint16_t STRING_LANGUAGE[2] = { (DESCRIPTOR_STRING << 8) | 4, 0x0409 };  // 0409 is US English
+                        USB_Write(pUsb, (const char*)STRING_LANGUAGE, minval(sizeof(STRING_LANGUAGE), wLength), USB_EP_CTRL);
+                    }
+                    break;
+
+                    case STRING_INDEX_MANUFACTURER:
+                    USB_SendString(pUsb, ManufacturerString, wLength );
+                    break;
+
+                    case STRING_INDEX_PRODUCT:
+                    USB_SendString(pUsb, ProductString, wLength );
+                    break;
+
+                    case STRING_INDEX_SERIAL_NUMBER:
+                    USB_SendString(pUsb, SerialNumberString, wLength );  // TODO: create serial-number string from device unique-ID
+                    break;
+
+                    default:
+                    USB_SendStall(pUsb, true);
+                    retval = false;
+                    break;
+                }
+            }
+            else
+            {
+                USB_SendStall(pUsb, true);
+                retval = false;
+            }
+            break;
+
+        case USBREQ_SET_ADDRESS:
+            USB_SendZLP(pUsb);
+            /* Set device address to the newly received address from host */
+            USB_SetAddress(pUsb, wValue);
+            break;
+
+        case USBREQ_SET_CONFIGURATION:
+            /* Store configuration */
+            bCurrentConfig = (uint8_t)wValue;
+            USB_SendZLP(pUsb);
+            /* Configure the 3 needed endpoints */
+            USB_Configure(pUsb);
+            break;
+
+        case USBREQ_GET_CONFIGURATION:
+            /* Return current configuration value */
+            USB_Write(pUsb, (char*) &bCurrentConfig, 1, USB_EP_CTRL);
+            break;
+
+        case USBREQ_GET_STATUS_ZERO:
+            wStatus = 0;
+            USB_Write(pUsb, (char*) &wStatus, sizeof(wStatus), USB_EP_CTRL);
+            break;
+
+        case USBREQ_GET_STATUS_INTERFACE:
+            wStatus = 0;
+            USB_Write(pUsb, (char*) &wStatus, sizeof(wStatus), USB_EP_CTRL);
+            break;
+
+        case USBREQ_GET_STATUS_ENDPOINT:
+            wStatus = 0;
+            dir = wIndex & 80;
+            wIndex &= 0x0F;
+            if (wIndex <= 3)
+            {
+                if (dir)
+                {
+                    wStatus = (pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUS.reg & USB_DEVICE_EPSTATUSSET_STALLRQ1) ? 1 : 0;
+                }
+                else
+                {
+                    wStatus = (pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUS.reg & USB_DEVICE_EPSTATUSSET_STALLRQ0) ? 1 : 0;
+                }
+                /* Return current status of endpoint */
+                USB_Write(pUsb, (char *) &wStatus, sizeof(wStatus), USB_EP_CTRL);
+            }
+            else
+            {
+                USB_SendStall(pUsb, true);
+                retval = false;
+            }
+            break;
+
+        case USBREQ_SET_FEATURE_ZERO:
+            USB_SendStall(pUsb, true);
+            retval = false;
+            break;
+
+        case USBREQ_SET_FEATURE_INTERFACE:
+            USB_SendZLP(pUsb);
+            break;
+
+        case USBREQ_SET_FEATURE_ENDPOINT:
+            dir = wIndex & 0x80;
+            wIndex &= 0x0F;
+            if ((wValue == 0) && wIndex && (wIndex <= 3))
+            {
+                /* Set STALL request for the endpoint */
+                if (dir)
+                {
+                    pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSSET.reg = USB_DEVICE_EPSTATUSSET_STALLRQ1;
+                }
+                else
+                {
+                    pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSSET.reg = USB_DEVICE_EPSTATUSSET_STALLRQ0;
+                }
+                USB_SendZLP(pUsb);
+            }
+            else
+            {
+                USB_SendStall(pUsb, true);
+                retval = false;
+            }
+            break;
+
+        case USBREQ_SET_INTERFACE:
+        case USBREQ_CLEAR_FEATURE_ZERO:
+            USB_SendStall(pUsb, true);
+            retval = false;
+            break;
+
+        case USBREQ_CLEAR_FEATURE_INTERFACE:
+            USB_SendZLP(pUsb);
+            break;
+
+        case USBREQ_CLEAR_FEATURE_ENDPOINT:
+            dir = wIndex & 0x80;
+            wIndex &= 0x0F;
+
+            if ((wValue == 0) && wIndex && (wIndex <= 3))
+            {
+                if (dir)
+                {
+                    if (pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUS.bit.STALLRQ1)
+                    {
+                        // Remove stall request
+                        pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSCLR_STALLRQ1;
+                        if (pUsb->DEVICE.DeviceEndpoint[wIndex].EPINTFLAG.bit.STALL1)
+                        {
+                            pUsb->DEVICE.DeviceEndpoint[wIndex].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_STALL1;
+                            // The Stall has occurred, then reset data toggle
+                            pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSSET_DTGLIN;
+                        }
+                    }
+                }
+                else
+                {
+                    if (pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUS.bit.STALLRQ0)
+                    {
+                        // Remove stall request
+                        pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSCLR_STALLRQ0;
+                        if (pUsb->DEVICE.DeviceEndpoint[wIndex].EPINTFLAG.bit.STALL0)
+                        {
+                            pUsb->DEVICE.DeviceEndpoint[wIndex].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_STALL0;
+                            // The Stall has occurred, then reset data toggle
+                            pUsb->DEVICE.DeviceEndpoint[wIndex].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSSET_DTGLOUT;
+                        }
+                    }
+                }
+                USB_SendZLP(pUsb);
+            }
+            else
+            {
+                USB_SendStall(pUsb, true);
+                retval = false;
+            }
+            break;
+
+        default:
+            USB_SendStall(pUsb, true);
+            retval = false;
+            break;
+    }
+    return retval;
 }
 
 /*----------------------------------------------------------------------------
@@ -354,4 +598,9 @@ void USB_Configure(P_USB_t pUsb)
     /* Set maximum packet size as 64 bytes */
     usb_endpoint_table[USB_EP_COMM].DeviceDescBank[1].PCKSIZE.bit.SIZE = 0;
     pUsb->DEVICE.DeviceEndpoint[USB_EP_COMM].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSCLR_BK1RDY;
+}
+
+uint8_t USB_GetCurrentConfig(void)
+{
+    return bCurrentConfig;
 }
