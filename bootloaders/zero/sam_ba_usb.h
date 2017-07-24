@@ -80,7 +80,4 @@
 
 typedef Usb USB_t, *P_USB_t;  // (define consistent names for the Atmel CMSIS type) 
 
-uint32_t USB_SendString(P_USB_t pUsb, const char* ascii_string, uint8_t maxLength);
-
-
 #endif // _SAM_BA_USB_H_

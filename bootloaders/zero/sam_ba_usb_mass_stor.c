@@ -11,6 +11,8 @@ Implements the Mass-Storage Class (USB flash-drive) functionality
 #include "board_driver_usb.h"
 #include "sam_ba_mass_stor.h"
 
+#define lesser_of(a, b) (a < b ? a : b)
+
 /* This data array will be copied into SRAM as its length is inferior to 64 bytes,
 * and so can stay in flash.
 */
@@ -85,7 +87,43 @@ char cfgDescriptor[] =
     0                                  /* bLength */
 };
 
+static char InquiryResponse0[] = {  0,    // peripheral device-type and qualifier
+                                    0x80, // EVPD Page Code: Unit Serial-Number Page
+                                    0x04, // conforms to SCSI Primary Commands v2
+                                    0x02, // SPC-2/SPC-3 response format
+                                    31,   // additional length 31
+                                    0,    // flags5
+                                    0,    // flags6
+                                    0,    // flags7
+                                    'A', 'S', 'H', ' ', 'W', 'l', 's', 's',  // vendor ident.
+                                    'L', 'o', 'g', 'g', 'e', 'r', ' ', 'P', 'l', 'a', 't', 'f', 'o', 'r', 'm', ' ',
+                                    'v', '1', '.', '0'  // product revision level
+                                    };
+                                    
+static char InquiryResponse1[] = {  0,    // peripheral device-type and qualifier
+                                    0x80, // EVPD PAge Code = Unit Serial-Number Page
+                                    0, 16,   // page length 16
+                                    '0', '1', '2', '3', '4', '5', '6', '7',  // serial-number
+                                    '0', '1', '2', '3', '4', '5', '6', '7',  // more serial-number
+};
+
+static char CapacityResponse[] = { 0x00, 0xE8, 0x8D, 0x7F,  // flash-card capacity in sectors
+                                    0x00, 0x00, 0x02, 0x00  // sector-size 512 bytes
+                                    };
+
+static char SenseResponse[] = { 0x70,  // sense-code Current Error
+                                0,     // (obsolete)
+                                0x06,  // sense-key Unit Attention
+                                0, 0, 0, 0,  // sense information
+                                10,  // additional sense length
+                                0, 0, 0, 0,  // command-specific information
+                                0x28, 0x00,  // additional sense code + qualifier
+                                0,  // Field-Replaceable Unit code
+                                0, 0, 0  // sense key specific info
+                                };
+
 USB_MSD_t sam_ba_msd;
+__attribute__((__aligned__(4))) uint8_t msd_bulk_buffer[8192]; // shared buffer for bulk in and out
 
 const char *DeviceDescriptor = devDescriptor;
 const char *ConfigDescriptor[] = {cfgDescriptor};
@@ -93,10 +131,31 @@ const char* ManufacturerString =  "ASH Wireless Ltd.";
 const char* ProductString = "SAMD21 mass-storage device";
 const char* SerialNumberString = "0123456789";  // TODO: derive the serial-number from the device unique-ID
 
+// Utility functions to read little-endian and big-endian integers from a buffer:
+static uint16_t INT16BE(char *pData)
+{
+    return ( ((uint16_t)pData[0]) << 8) | pData[1]; 
+}
+
+static uint16_t INT16LE(char *pData)
+{
+    return *(uint16_t*)pData;
+}
+
+static uint32_t INT32BE(char *pData)
+{
+    return ( ((uint32_t)pData[0]) << 24) | ( ((uint32_t)pData[1]) << 16) | ( ((uint32_t)pData[2]) << 8) | pData[3];
+}
+
+static uint32_t INT32LE(char *pData)
+{
+    return *(uint32_t*)pData;
+}
+
 /*----------------------------------------------------------------------------
-* \brief This function is a callback invoked when a SETUP packet is received
+* \brief This function is a callback invoked when a class-specific request is recognised
 */
-bool sam_ba_usb_mass_stor_handle_req(P_USB_t pUsb, uint8_t *pCurrentConfig)
+bool sam_ba_usb_mass_stor_handle_req(P_USB_t pUsb, uint8_t *SetupPacket, void *pParams)
 {
     static volatile uint8_t bmRequestType, bRequest, dir;
     static volatile uint16_t wValue, wIndex, wLength, wStatus;
@@ -106,7 +165,6 @@ bool sam_ba_usb_mass_stor_handle_req(P_USB_t pUsb, uint8_t *pCurrentConfig)
     pUsb->DEVICE.DeviceEndpoint[0].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_RXSTP;
 
     /* Read the USB request parameters */
-    uint8_t *SetupPacket = udd_ep_out_cache_buffer[0];
     bmRequestType = SetupPacket[0];
     bRequest      = SetupPacket[1];
     uint8_t bDesc = SetupPacket[2];
@@ -147,7 +205,6 @@ P_USB_MSD_t usb_msd_init(void)
     /* Initialize USB */
     USB_Init();
     /* Get the default MSD structure settings */
-//    USB_Open(&sam_ba_msd, USB);
     P_USB_MSD_t pMSD = &sam_ba_msd;
     pMSD->pUsb = USB;
     pMSD->currentConfiguration = 0;
@@ -159,24 +216,87 @@ P_USB_MSD_t usb_msd_init(void)
     return &sam_ba_msd;
 }
 
-/*----------------------------------------------------------------------------
-* \brief Send a USB descriptor string.
-*
-* The input string is plain ASCII but is sent out as UTF-16 with the correct 2-byte prefix.
-*/
-uint32_t USB_SendString(P_USB_t pUsb, const char* ascii_string, uint8_t maxLength)
+bool sam_ba_usb_mass_stor_handle_scsi(uint8_t *pData, uint8_t ScsiLength, uint32_t tag)
 {
-    uint8_t string_descriptor[255]; // Max USB-allowed string length
-
-    string_descriptor[0] = (strlen(ascii_string) + 1) * 2;
-    string_descriptor[1] = DESCRIPTOR_STRING;
-
-    uint16_t* unicode_string=(uint16_t*)(string_descriptor + 2); // point on 3 bytes of descriptor
-    int resulting_length;
-    for ( resulting_length = 1 ; *ascii_string && (resulting_length < (maxLength/2)) ; resulting_length++ )
+    uint32_t SCSI_Response[4];
+    SCSI_Response[0] = 0x53425355;  // 'USBS' little-endian
+    SCSI_Response[1] = tag;
+    SCSI_Response[2] = 0;  // "DataResidue"
+    SCSI_Response[3] = 0;
+    bool isOK = true;
+    
+    switch(pData[0]) 
     {
-        *unicode_string++ = (uint16_t)(*ascii_string++);
+    case UFI_CMD_INQUIRY:
+        if (pData[1] == 0)  // 
+        {
+            USB_Write(USB, InquiryResponse0, sizeof(InquiryResponse0), USB_EP_IN);
+        }
+        else if (pData[1] == 1)  // Unit Serial-Number Page
+        {
+            USB_Write(USB, InquiryResponse1, sizeof(InquiryResponse0), USB_EP_IN);
+        }
+        else
+        {
+            isOK = false;
+        }
+        break;
+
+    case UFI_CMD_READ_FORMAT_CAPACITIES:
+        isOK = false;  // Kingston SE9 does not support this, why should we?
+        break;
+        
+    case UFI_CMD_REQUEST_SENSE:
+        USB_Write(USB, SenseResponse, sizeof(SenseResponse), USB_EP_IN);
+        break;
+    
+    case UFI_CMD_READ_CAPACITY:
+        USB_Write(USB, CapacityResponse, sizeof(CapacityResponse), USB_EP_IN);
+        break;
+        
+    case UFI_CMD_TEST_UNIT_READY:
+        break;  // never not ready!
+        
+    case UFI_CMD_READ10:
+    {
+        uint32_t LBA = INT32BE(pData + 2);
+        uint16_t TfrLengthSectors = INT16BE(pData + 7);
+        uint32_t length = lesser_of(TfrLengthSectors * 512, sizeof(msd_bulk_buffer));
+        // TODO: read sectors from SD card into msd_bulk_buffer
+        USB_Write_Raw(USB, (uint32_t)msd_bulk_buffer, length, USB_EP_IN);
+    }        
+        break;
+        
+    case UFI_CMD_MODE_SENSE6:
+        
+        break;
+
+    case UFI_CMD_MEDIA_REMOVAL:
+        
+        break;
+
+    case UFI_CMD_FORMAT_UNIT:
+    case UFI_CMD_MODE_SELECT6:
+    case UFI_CMD_START_STOP_UNIT:
+    case UFI_CMD_WRITE10:
+    case UFI_CMD_SEEK10:
+    case UFI_CMD_VERIFY10:
+    case UFI_CMD_MODE_SELECT10:
+    case UFI_CMD_MODE_SENSE10:
+    case UFI_CMD_READ12:
+    case UFI_CMD_WRITE12:
+        return true;
+    
+    default:
+        isOK = false;
+    }    
+
+    if ( !isOK && SCSI_Response[3] == 0)
+    {
+        SCSI_Response[2] = 0xFC;  // TODO: check the meaning of this
+        SCSI_Response[3] = 0x01;  // "Command Failed"
     }
 
-    return USB_Write(pUsb, (const char*)string_descriptor, (resulting_length * 2), USB_EP_CTRL);
+    USB_Write(USB, SCSI_Response, 13, USB_EP_IN);
+    return isOK;
 }

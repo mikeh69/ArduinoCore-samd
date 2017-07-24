@@ -41,10 +41,14 @@ void USB_Init(void);
 bool USB_HandleRequest(P_USB_t pUsb, ClassReqHandlerFn_t pClassReqHandler, void *pExtraParams);
 
 uint32_t USB_Write(P_USB_t pUsb, const char *pData, uint32_t length, uint8_t ep_num);
+uint32_t USB_Write_Raw(P_USB_t pUsb, uint32_t data_address, uint32_t length, uint8_t ep_num);
+uint32_t USB_SendString(P_USB_t pUsb, const char* ascii_string, uint8_t maxLength);
 uint32_t USB_Read(P_USB_t pUsb, char *pData, uint32_t length);
 uint32_t USB_Read_blocking(USB_t *pUsb, char *pData, uint32_t length);
 
 uint8_t USB_IsConfigured(P_USB_t pUsb);
+bool USB_IsRequestPending(P_USB_t pUsb);
+bool USB_IsBulkDataAvailable(P_USB_t pUsb);
 
 void USB_SendStall(P_USB_t pUsb, bool direction_in);
 void USB_SendZLP(P_USB_t pUsb);

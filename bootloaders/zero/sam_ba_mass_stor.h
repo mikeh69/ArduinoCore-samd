@@ -101,6 +101,8 @@ typedef struct _USB_MSD
 } USB_MSD_t, *P_USB_MSD_t;
 
 P_USB_MSD_t usb_msd_init(void);
-bool sam_ba_usb_mass_stor_handle_req(P_USB_t pUsb, uint8_t *pCurrentConfig);
+bool sam_ba_usb_mass_stor_handle_req(P_USB_t pUsb, uint8_t *SetupPacket, void *pParams);
+bool sam_ba_usb_mass_stor_handle_scsi(uint8_t *pData, uint8_t ScsiLength, uint32_t Tag);
+
 
 #endif // _SAM_BA_MASS_STOR_H_

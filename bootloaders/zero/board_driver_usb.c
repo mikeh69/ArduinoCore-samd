@@ -163,7 +163,12 @@ uint32_t USB_Write(P_USB_t pUsb, const char *pData, uint32_t length, uint8_t ep_
         /* Update the EP data address */
         data_address = (uint32_t) &udd_ep_in_cache_buffer[buf_index];
     }
+    USB_Write_Raw(pUsb, data_address, length, ep_num);
+}    
 
+// Write data directly using a pre-loaded buffer
+uint32_t USB_Write_Raw(P_USB_t pUsb, uint32_t data_address, uint32_t length, uint8_t ep_num)
+{
     /* Set the buffer address for ep data */
     usb_endpoint_table[ep_num].DeviceDescBank[1].ADDR.reg = data_address;
     /* Set the byte count as zero */
@@ -179,6 +184,16 @@ uint32_t USB_Write(P_USB_t pUsb, const char *pData, uint32_t length, uint8_t ep_
     while ( (pUsb->DEVICE.DeviceEndpoint[ep_num].EPINTFLAG.bit.TRCPT1) == 0 );
 
     return length;
+}
+
+bool USB_IsBulkDataAvailable(P_USB_t pUsb)
+{
+    /* Check whether the device is configured */
+    if ( !USB_IsConfigured(pUsb) )
+    return false;
+
+    /* Return transfer complete 0 flag status */
+    return (pUsb->DEVICE.DeviceEndpoint[USB_EP_OUT].EPINTFLAG.bit.TRCPT0 != 0);
 }
 
 /*----------------------------------------------------------------------------
@@ -577,7 +592,7 @@ void USB_SetAddress(P_USB_t pUsb, uint16_t wValue)
 */
 void USB_Configure(P_USB_t pUsb)
 {
-    /* Configure BULK OUT endpoint for CDC Data interface*/
+    /* Configure BULK OUT endpoint for Mass-Storage interface*/
     pUsb->DEVICE.DeviceEndpoint[USB_EP_OUT].EPCFG.reg = USB_DEVICE_EPCFG_EPTYPE0(3);
     /* Set maximum packet size as 64 bytes */
     usb_endpoint_table[USB_EP_OUT].DeviceDescBank[0].PCKSIZE.bit.SIZE = 3;
@@ -585,22 +600,38 @@ void USB_Configure(P_USB_t pUsb)
     /* Configure the data buffer */
     usb_endpoint_table[USB_EP_OUT].DeviceDescBank[0].ADDR.reg = (uint32_t)&udd_ep_out_cache_buffer[1];
 
-    /* Configure BULK IN endpoint for CDC Data interface */
+    /* Configure BULK IN endpoint for Mass-Storage interface */
     pUsb->DEVICE.DeviceEndpoint[USB_EP_IN].EPCFG.reg = USB_DEVICE_EPCFG_EPTYPE1(3);
     /* Set maximum packet size as 64 bytes */
     usb_endpoint_table[USB_EP_IN].DeviceDescBank[1].PCKSIZE.bit.SIZE = 3;
     pUsb->DEVICE.DeviceEndpoint[USB_EP_IN].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSCLR_BK1RDY;
     /* Configure the data buffer */
     usb_endpoint_table[USB_EP_IN].DeviceDescBank[1].ADDR.reg = (uint32_t)&udd_ep_in_cache_buffer[1];
-
-    /* Configure INTERRUPT IN endpoint for CDC COMM interface*/
-    pUsb->DEVICE.DeviceEndpoint[USB_EP_COMM].EPCFG.reg = USB_DEVICE_EPCFG_EPTYPE1(4);
-    /* Set maximum packet size as 64 bytes */
-    usb_endpoint_table[USB_EP_COMM].DeviceDescBank[1].PCKSIZE.bit.SIZE = 0;
-    pUsb->DEVICE.DeviceEndpoint[USB_EP_COMM].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSCLR_BK1RDY;
 }
 
 uint8_t USB_GetCurrentConfig(void)
 {
     return bCurrentConfig;
+}
+
+/*----------------------------------------------------------------------------
+* \brief Send a USB descriptor string.
+*
+* The input string is plain ASCII but is sent out as UTF-16 with the correct 2-byte prefix.
+*/
+uint32_t USB_SendString(P_USB_t pUsb, const char* ascii_string, uint8_t maxLength)
+{
+    uint8_t string_descriptor[255]; // Max USB-allowed string length
+
+    string_descriptor[0] = (strlen(ascii_string) + 1) * 2;
+    string_descriptor[1] = DESCRIPTOR_STRING;
+
+    uint16_t* unicode_string=(uint16_t*)(string_descriptor + 2); // point on 3 bytes of descriptor
+    int resulting_length;
+    for ( resulting_length = 1 ; *ascii_string && (resulting_length < (maxLength/2)) ; resulting_length++ )
+    {
+        *unicode_string++ = (uint16_t)(*ascii_string++);
+    }
+
+    return USB_Write(pUsb, (const char*)string_descriptor, (resulting_length * 2), USB_EP_CTRL);
 }
